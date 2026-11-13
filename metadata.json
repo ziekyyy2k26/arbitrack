@@ -1,0 +1,6 @@
+{
+  "name": "ArbPulse — Search Arbitrage Yield & Automation Desk",
+  "description": "Real-time search arbitrage command platform for tracking live spend, revenue trends across 1,000+ keywords, automated multi-network bidding, feeder API syncing, benchmarking alerts, and automated daily and weekly reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
