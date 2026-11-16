@@ -233,7 +233,10 @@ export function OverviewView({
               <tbody className="divide-y divide-slate-100 text-xs">
                 {topWinners.map((k) => (
                   <tr key={k.id} className="hover:bg-slate-50">
-                    <td className="py-2 pr-2 font-medium text-slate-900 max-w-[185px] truncate">
+                    <td
+                      title={k.keyword}
+                      className="py-2 pr-2 font-medium text-slate-900 max-w-[185px] truncate"
+                    >
                       {k.keyword}
                     </td>
                     <td className="py-2 px-2 text-slate-600 whitespace-nowrap">

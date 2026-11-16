@@ -1,15 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  calculateKeywordColumnFitWidth,
   computeBenchmarks,
   computeKeywordMetrics,
   computeSummary,
   createInitialWorkspaceState,
+  DEFAULT_KEYWORD_COL_WIDTH,
   evaluateAlertThresholds,
   evaluateBidRules,
   generateReport,
   keywordsToCsv,
   mapEventsToTrendSeries,
+  MAX_KEYWORD_COL_WIDTH,
+  MIN_KEYWORD_COL_WIDTH,
   processLiveTick,
   reportToCsv,
   seedKeywords,
@@ -158,3 +162,23 @@ test('mapEventsToTrendSeries maps bid changes, alerts, and sync events to neares
   assert.ok(allAnnotations.some((a) => a.kind === 'alert'));
   assert.ok(allAnnotations.some((a) => a.kind === 'campaign_event'));
 });
+
+test('calculateKeywordColumnFitWidth sizes to longest keyword within min/max bounds', () => {
+  assert.equal(calculateKeywordColumnFitWidth([]), DEFAULT_KEYWORD_COL_WIDTH);
+
+  const shortWidth = calculateKeywordColumnFitWidth([
+    { keyword: 'hi', vertical: 'Auto', geo: 'US' },
+  ]);
+  assert.equal(shortWidth, MIN_KEYWORD_COL_WIDTH);
+
+  const seeded = seedKeywords(1000, '2026-11-13T12:00:00.000Z');
+  const fitWidth = calculateKeywordColumnFitWidth(seeded);
+  assert.ok(fitWidth > DEFAULT_KEYWORD_COL_WIDTH);
+  assert.ok(fitWidth <= MAX_KEYWORD_COL_WIDTH);
+
+  const hugeWidth = calculateKeywordColumnFitWidth([
+    { keyword: 'x'.repeat(200), vertical: 'Legal Services', geo: 'US' },
+  ]);
+  assert.equal(hugeWidth, MAX_KEYWORD_COL_WIDTH);
+});
+

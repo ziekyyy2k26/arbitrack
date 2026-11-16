@@ -1212,3 +1212,31 @@ export function createInitialWorkspaceState(nowIso = new Date().toISOString()): 
     autoBiddingEnabled: true,
   };
 }
+
+export const DEFAULT_KEYWORD_COL_WIDTH = 252;
+export const MIN_KEYWORD_COL_WIDTH = 160;
+export const MAX_KEYWORD_COL_WIDTH = 640;
+
+export function calculateKeywordColumnFitWidth(
+  keywords: Array<Pick<KeywordRecord, 'keyword' | 'vertical' | 'geo'>>,
+  measureKeywordPx?: (text: string) => number
+): number {
+  if (keywords.length === 0) return DEFAULT_KEYWORD_COL_WIDTH;
+
+  const measurePrimary = measureKeywordPx ?? ((text: string) => text.length * 7.1);
+  let maxTextPx = 0;
+
+  for (const kw of keywords) {
+    const primaryPx = measurePrimary(kw.keyword);
+    const sublinePx = `${kw.vertical} · ${kw.geo}`.length * 6.0;
+    const needed = Math.max(primaryPx, sublinePx);
+    if (needed > maxTextPx) {
+      maxTextPx = needed;
+    }
+  }
+
+  // Add right padding (pr-3 = 12px) + breathing margin (16px)
+  const raw = Math.ceil(maxTextPx) + 28;
+  return Math.max(MIN_KEYWORD_COL_WIDTH, Math.min(MAX_KEYWORD_COL_WIDTH, raw));
+}
+

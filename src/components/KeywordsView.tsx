@@ -1,7 +1,25 @@
-import { useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, Pause, Play, Search } from 'lucide-react';
-import { AD_NETWORKS, FEEDER_LIST, keywordsToCsv } from '../lib/arbitrageEngine';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowLeftRight,
+  ArrowUp,
+  Download,
+  Pause,
+  Play,
+  RotateCcw,
+  Search,
+} from 'lucide-react';
+import {
+  AD_NETWORKS,
+  calculateKeywordColumnFitWidth,
+  DEFAULT_KEYWORD_COL_WIDTH,
+  FEEDER_LIST,
+  keywordsToCsv,
+  MAX_KEYWORD_COL_WIDTH,
+  MIN_KEYWORD_COL_WIDTH,
+} from '../lib/arbitrageEngine';
 import type { AdNetwork, FeederId, KeywordRecord, KeywordStatus } from '../types/arbitrage';
+import { downloadTextFile } from '../utils/download';
 import { formatCurrency, formatNumber, formatPct } from '../utils/format';
 
 interface KeywordsViewProps {
@@ -23,6 +41,22 @@ type SortField =
 
 const ROW_HEIGHT = 44;
 const VIEWPORT_HEIGHT = 572; // 13 visible rows at 44px
+const COL_WIDTH_STORAGE_KEY = 'arbpulse_keyword_col_width_v1';
+
+function loadSavedKeywordColWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(COL_WIDTH_STORAGE_KEY);
+    if (raw) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        return Math.max(MIN_KEYWORD_COL_WIDTH, Math.min(MAX_KEYWORD_COL_WIDTH, Math.round(parsed)));
+      }
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return DEFAULT_KEYWORD_COL_WIDTH;
+}
 
 export function KeywordsView({
   keywords,
@@ -40,8 +74,19 @@ export function KeywordsView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBidValue, setEditBidValue] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [keywordColWidth, setKeywordColWidth] = useState<number>(loadSavedKeywordColWidth);
+  const [isResizingCol, setIsResizingCol] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COL_WIDTH_STORAGE_KEY, String(keywordColWidth));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [keywordColWidth]);
 
   const filteredKeywords = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -141,15 +186,76 @@ export function KeywordsView({
     }
   };
 
+  const handleAutoFitKeywordColumn = useCallback(() => {
+    const source = filteredKeywords.length > 0 ? filteredKeywords : keywords;
+    let measureFn: ((text: string) => number) | undefined;
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.font = '500 12px "DM Sans", system-ui, sans-serif';
+        measureFn = (text: string) => ctx.measureText(text).width;
+      }
+    } catch {
+      // Fallback to deterministic estimate
+    }
+    const fitWidth = calculateKeywordColumnFitWidth(source, measureFn);
+    setKeywordColWidth(fitWidth);
+  }, [filteredKeywords, keywords]);
+
+  const handleResetKeywordColumn = useCallback(() => {
+    setKeywordColWidth(DEFAULT_KEYWORD_COL_WIDTH);
+  }, []);
+
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragStateRef.current = { startX: e.clientX, startWidth: keywordColWidth };
+    setIsResizingCol(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingCol) return;
+
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      const nextWidth = Math.max(
+        MIN_KEYWORD_COL_WIDTH,
+        Math.min(MAX_KEYWORD_COL_WIDTH, Math.round(drag.startWidth + (e.clientX - drag.startX)))
+      );
+      setKeywordColWidth(nextWidth);
+    };
+
+    const onPointerUp = () => {
+      dragStateRef.current = null;
+      setIsResizingCol(false);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+
+    return () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [isResizingCol]);
+
+  const gridTemplateColumns = `42px ${keywordColWidth}px 82px 84px 68px 120px 62px 58px 74px 76px 78px 64px minmax(66px, 1fr)`;
+
   const handleExportCsv = () => {
     const csv = keywordsToCsv(filteredKeywords);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'arbpulse-keywords-export.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    const suffix = feederFilter === 'all' ? 'filtered' : feederFilter;
+    downloadTextFile(csv, `arbpulse-keywords-${suffix}.csv`, 'text/csv;charset=utf-8;');
   };
 
   const renderSortIcon = (field: SortField) => {
@@ -178,14 +284,38 @@ export function KeywordsView({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Download className="w-3.5 h-3.5" aria-hidden="true" />
-            Export Filtered CSV
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAutoFitKeywordColumn}
+              title="Auto-fit Keyword column width to display full keyword text (or double-click column border)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" aria-hidden="true" />
+              Fit Keywords
+            </button>
+
+            {keywordColWidth !== DEFAULT_KEYWORD_COL_WIDTH && (
+              <button
+                type="button"
+                onClick={handleResetKeywordColumn}
+                title="Reset Keyword column width to default"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 font-mono tabular-nums"
+              >
+                <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                Reset ({keywordColWidth}px)
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              Export Filtered CSV
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
@@ -295,11 +425,12 @@ export function KeywordsView({
       {/* Virtualized 1,000-Row Live Grid */}
       <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <div className="min-w-[1030px]">
+          <div style={{ minWidth: `${898 + keywordColWidth}px` }} data-testid="keywords-sheet-grid">
             {/* Sticky Header Row */}
             <div
               role="row"
-              className="grid grid-cols-[42px_minmax(175px,1.4fr)_82px_84px_68px_120px_62px_58px_74px_76px_78px_64px_66px] items-center px-3 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-500"
+              style={{ gridTemplateColumns }}
+              className="grid items-center px-3 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] font-medium text-slate-500"
             >
               <button
                 type="button"
@@ -308,8 +439,46 @@ export function KeywordsView({
               >
                 # {renderSortIcon('index')}
               </button>
-              <div>Keyword · Vertical · Geo</div>
-              <div>Feeder</div>
+              <div className="relative flex items-center justify-between pr-3 min-w-0">
+                <span className="truncate">Keyword · Vertical · Geo</span>
+                <div
+                  role="separator"
+                  tabIndex={0}
+                  aria-orientation="vertical"
+                  aria-label="Resize keyword column width"
+                  aria-valuemin={MIN_KEYWORD_COL_WIDTH}
+                  aria-valuemax={MAX_KEYWORD_COL_WIDTH}
+                  aria-valuenow={keywordColWidth}
+                  title="Drag to resize Keyword column or double-click to auto-fit"
+                  onPointerDown={handleResizePointerDown}
+                  onDoubleClick={handleAutoFitKeywordColumn}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      setKeywordColWidth((w) => Math.min(MAX_KEYWORD_COL_WIDTH, w + 16));
+                    } else if (e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      setKeywordColWidth((w) => Math.max(MIN_KEYWORD_COL_WIDTH, w - 16));
+                    } else if (e.key === 'Home') {
+                      e.preventDefault();
+                      handleResetKeywordColumn();
+                    } else if (e.key === 'End' || e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAutoFitKeywordColumn();
+                    }
+                  }}
+                  className="absolute right-0.5 -top-2.5 -bottom-2.5 w-3 cursor-col-resize touch-none flex items-center justify-center group focus:outline-none"
+                >
+                  <span
+                    className={`h-5 w-[2px] rounded-full transition-colors ${
+                      isResizingCol
+                        ? 'bg-blue-600'
+                        : 'bg-slate-300 group-hover:bg-blue-500 group-focus:bg-blue-600'
+                    }`}
+                  />
+                </div>
+              </div>
+              <div className="pl-1">Feeder</div>
               <div>Network</div>
               <div>Status</div>
               <button
@@ -407,21 +576,26 @@ export function KeywordsView({
                           left: 0,
                           right: 0,
                           height: `${ROW_HEIGHT}px`,
+                          gridTemplateColumns,
                         }}
-                        className="grid grid-cols-[42px_minmax(175px,1.4fr)_82px_84px_68px_120px_62px_58px_74px_76px_78px_64px_66px] items-center px-3 text-xs border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                        className="grid items-center px-3 text-xs border-b border-slate-100 hover:bg-slate-50 transition-colors"
                       >
                         <div className="font-mono tabular-nums text-slate-400">
                           {kw.index}
                         </div>
-                        <div className="min-w-0 pr-3">
-                          <div className="font-medium text-slate-900 truncate">
+                        <div
+                          className={`min-w-0 pr-3 h-full flex flex-col justify-center ${
+                            isResizingCol ? 'border-r border-blue-200' : 'border-r border-slate-100'
+                          }`}
+                        >
+                          <div className="font-medium text-slate-900 truncate" title={kw.keyword}>
                             {kw.keyword}
                           </div>
                           <div className="text-[11px] text-slate-400 truncate">
                             {kw.vertical} · {kw.geo}
                           </div>
                         </div>
-                        <div className="text-slate-700 font-medium truncate">
+                        <div className="pl-1 text-slate-700 font-medium truncate">
                           {kw.feederName}
                         </div>
                         <div className="text-slate-600 truncate">{kw.network}</div>

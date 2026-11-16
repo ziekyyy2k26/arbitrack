@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { reportToCsv } from '../lib/arbitrageEngine';
 import type { ArbitrageReport } from '../types/arbitrage';
+import { downloadTextFile } from '../utils/download';
 import { formatCurrency, formatDateTime, formatNumber, formatPct } from '../utils/format';
 
 interface ReportsViewProps {
@@ -28,25 +29,19 @@ export function ReportsView({ reports, onGenerateReport }: ReportsViewProps) {
 
   const handleDownloadCsv = (report: ArbitrageReport) => {
     const csv = reportToCsv(report);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `arbpulse-${report.cadence}-report-${report.periodLabel.replace(/\s+/g, '_')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(
+      csv,
+      `arbpulse-${report.cadence}-report-${report.periodLabel.replace(/\s+/g, '_')}.csv`,
+      'text/csv;charset=utf-8;'
+    );
   };
 
   const handleDownloadJson = (report: ArbitrageReport) => {
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `arbpulse-${report.cadence}-report-${report.periodLabel.replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(
+      JSON.stringify(report, null, 2),
+      `arbpulse-${report.cadence}-report-${report.periodLabel.replace(/\s+/g, '_')}.json`,
+      'application/json;charset=utf-8;'
+    );
   };
 
   return (

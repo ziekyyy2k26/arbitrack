@@ -492,6 +492,15 @@ async function startServer() {
     res.download(zipPath, 'arbpulse-cloudflare-pages.zip');
   });
 
+  app.get(['/arbpulse-android.apk', '/api/download/android-apk'], (_req, res) => {
+    const apkPath = path.join(__dirname, 'arbpulse-android.apk');
+    if (!fs.existsSync(apkPath)) {
+      return res.status(404).json({ error: 'Android APK not built yet' });
+    }
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.download(apkPath, 'arbpulse-android.apk');
+  });
+
   // ---------------------------------------------------------------------------
   // Real-Time Market Tick, Auto-Bidding, Alerting & Scheduled Report Loop
   // ---------------------------------------------------------------------------
